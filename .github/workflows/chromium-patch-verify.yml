@@ -35,7 +35,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
-      CHROMIUM_WORK_DIR: ${{ runner.temp }}/chromium-work
       CHROMIUM_REF: origin/main
       BUILD_MODE: apply-only
       VERIFY_TARGET: chrome/common:common
@@ -45,6 +44,10 @@ jobs:
     steps:
       - name: Checkout anti-det repo
         uses: actions/checkout@v4
+
+      - name: Init runtime env
+        run: |
+          echo "CHROMIUM_WORK_DIR=${RUNNER_TEMP}/chromium-work" >> "$GITHUB_ENV"
 
       - name: Apply workflow_dispatch inputs
         if: github.event_name == 'workflow_dispatch'
@@ -70,4 +73,3 @@ jobs:
         run: |
           df -h
           du -sh "${CHROMIUM_WORK_DIR}" || true
-
