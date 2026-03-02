@@ -1,0 +1,19 @@
+{
+  "id": "dev",
+  "start_url": "https://browserleaks.com/",
+  "proxy": {
+    "server": "http://127.0.0.1:7890"
+  },
+  "fingerprint": {
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "accept_language": "en-US,en;q=0.9",
+    "timezone": "America/Los_Angeles",
+    "platform": "MacIntel",
+    "canvas_seed": "dev-seed-001",
+    "webgl_seed": "dev-seed-001"
+  },
+  "chromium_args": [
+    "--window-size=1280,900"
+  ]
+}
+

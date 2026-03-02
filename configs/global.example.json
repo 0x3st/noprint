@@ -1,0 +1,10 @@
+{
+  "chromium_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "base_data_dir": "data",
+  "shared_extensions_dir": "shared_extensions",
+  "chromium_args": [
+    "--no-first-run",
+    "--no-default-browser-check"
+  ]
+}
+
