@@ -1,169 +1,143 @@
 # anti-det
 
-极简开源指纹浏览器底座（macOS 优先）最小骨架。
+macOS 优先的极简开源指纹浏览器底座。
 
-当前仓库目标不是直接分发浏览器，而是提供：
+当前主路线是你定义的最终形态：
 
-- 本地 JSON 配置驱动的多环境启动器
-- 100% 物理隔离的 profile（独立 `user_data_dir`）
-- 全局共享插件目录（避免每个环境重复安装插件）
-- Patch-Driven Chromium 构建工作流骨架
+1. 用户下载 `MyBrowser.dmg` 并拖入应用程序
+2. 双击 `MyBrowser.app`，菜单栏出现图标
+3. 点击“环境 1 / 环境 2”
+4. 宿主程序调用 `Contents/Frameworks/Chromium.app`
+5. 自动附加 `--user-data-dir` 和 `--antidetect-config` 启动参数
+
+不要求终端用户安装 Python。
 
 ## 目录结构
 
-```
+```text
 anti-det/
-  launcher/
-    antidetect.py             # 启动器（读取 JSON -> 组装 Chromium 启动参数）
-  configs/
-    global.example.json       # 全局配置模板
-    profiles/
-      dev.example.json        # profile 模板
-  shared_extensions/          # 全局共享插件目录（unpacked）
-  patches/                    # 你的 Chromium patch 文件（*.patch）
+  host/macos/                       # Swift 菜单栏宿主
+    Package.swift
+    Info.plist
+    Sources/MyBrowserHost/
+      main.swift
+      Resources/
+        host.json
+        configs/profiles/*.json
+  launcher/                         # 研发调试用 CLI（可选）
+    antidetect.py
+  patches/                          # Chromium patch 栈
+    0001-*.patch
+    0002-*.patch
+    0003-*.patch
   scripts/
-    bootstrap_local.sh        # 初始化本地配置
-    build_chromium.sh         # 拉源码/打补丁/编译
-  Makefile
+    build_chromium.sh               # 拉源码/打补丁/编译 Chromium
+    ci_verify_chromium.sh           # GitHub Actions 验证脚本
+    build_host_macos.sh             # 编译 Swift 宿主并打包 .app
+    package_macos_app.sh            # 组装 MyBrowser.app
+    build_macos_dmg.sh              # 生成 MyBrowser.dmg
 ```
 
-## 快速开始（macOS）
+## MyBrowser.app 打包流程（macOS）
 
-1. 初始化本地配置
+1. 编译宿主（Swift）
 
 ```bash
-make bootstrap
+make host-swift-build
 ```
 
-2. 修改 `configs/global.json` 中的 `chromium_path`（默认是 Chrome 稳定版路径）
-
-3. 校验配置
+2. 组装 `.app`（需要你提供已编译 Chromium.app 路径）
 
 ```bash
-make validate
+make host-build CHROMIUM_APP=/abs/path/to/Chromium.app OUT=dist
 ```
 
-4. 先 dry-run 看命令行参数
+3. 生成 DMG
 
 ```bash
-make dry-run-dev
+make host-dmg APP=dist/MyBrowser.app DMG=dist/MyBrowser.dmg
 ```
 
-5. 真正启动
+产物：
 
-```bash
-make launch-dev
-```
+- `dist/MyBrowser.app`
+- `dist/MyBrowser.dmg`
 
-## 启动器支持
+## 宿主配置（无 Python 依赖）
 
-```bash
-python3 launcher/antidetect.py --global-config configs/global.json validate --profile dev
-python3 launcher/antidetect.py --global-config configs/global.json list-extensions
-python3 launcher/antidetect.py --global-config configs/global.json launch --profile dev --dry-run
-```
+默认读取顺序：
 
-## JSON 设计（最小）
+1. `~/Library/Application Support/MyBrowser/host.json`
+2. App 内置 `Contents/Resources/host.json`
 
-`configs/global.json`:
+宿主会：
 
-```json
-{
-  "chromium_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "base_data_dir": "data",
-  "shared_extensions_dir": "shared_extensions",
-  "chromium_args": ["--no-first-run", "--no-default-browser-check"]
-}
-```
+1. 读取 profile JSON
+2. 生成 `runtime_config.json`
+3. 自动扫描共享插件目录（unpacked）
+4. 启动 Chromium
 
-`configs/profiles/dev.json`:
-
-```json
-{
-  "id": "dev",
-  "proxy": {"server": "http://127.0.0.1:7890"},
-  "fingerprint": {
-    "user_agent": "...",
-    "canvas_seed": "dev-seed-001",
-    "webgl_seed": "dev-seed-001"
-  },
-  "chromium_args": ["--window-size=1280,900"]
-}
-```
-
-启动器会自动追加：
+关键参数：
 
 - `--user-data-dir=<独立目录>`
-- `--antidetect-config=<runtime-config-json-绝对路径>`
-- 共享插件参数（若 `shared_extensions_dir` 下有 unpacked 插件）
-
-并在每个 profile 的目录下生成标准化运行时配置文件：
-
-- `data/<profile-id>/antidetect/runtime_config.json`
+- `--antidetect-config=<runtime-config-json>`
+- `--disable-extensions-except` / `--load-extension`（如果有共享插件）
 
 ## Patch-Driven 工作流
 
-Chromium 魔改能力落在 `patches/*.patch`。构建脚本会执行：
+`patches/*.patch` 为唯一魔改来源，不提交 Chromium 巨仓。
 
-1. 拉取/同步官方 Chromium 源码到 `.chromium/src`
-2. 按文件名顺序应用 `patches/*.patch`
-3. 执行 `gn gen` + `ninja` 编译
+当前补丁栈：
+
+1. `0001-add-antidetect-config-switch.patch`
+2. `0002-read-antidetect-runtime-json-in-main-delegate.patch`
+3. `0003-apply-ua-and-accept-language-from-runtime-config.patch`
+4. `0004-plumb-canvas-webgl-seeds-to-child-processes.patch`
+5. `0005-apply-seeded-noise-in-canvas2d-and-webgl-readback.patch`
+6. `0006-fix-antidetect-switch-visibility-across-platforms.patch`
+7. `0007-salt-webgl-vendor-and-renderer-parameters.patch`
+8. `0008-add-thread-safe-runtime-config-cache-and-bootstrap-ipc.patch`
+9. `0009-hot-reload-runtime-config-on-file-change.patch`
+
+构建入口：
 
 ```bash
 ./scripts/build_chromium.sh
 ```
 
-当前已内置第一个基线补丁：
-
-- `patches/0001-add-antidetect-config-switch.patch`
-
-环境变量：
-
-- `CHROMIUM_REF`：指定编译基线（默认 `origin/main`）
-- `CHROMIUM_WORK_DIR`：Chromium 工作目录（默认 `.chromium`）
-- `CHROMIUM_OUT_DIR`：输出目录（默认 `out/Default`）
-
-补丁日常命令：
+常用补丁命令：
 
 ```bash
-# 新建补丁模板
-make new-patch N=0002 SLUG=load-antidetect-config-at-startup
-
-# 从 Chromium 源码导出某个 commit 为 patch 文件
-make export-patch SRC=.chromium/src COMMIT=HEAD OUT=0002-load-antidetect-config-at-startup.patch
-
-# 查看 patch 栈
+make new-patch N=0004 SLUG=canvas-webgl-seed-in-renderer
+make export-patch SRC=.chromium/src COMMIT=HEAD OUT=0004-canvas-webgl-seed-in-renderer.patch
 make patch-list
 ```
 
 ## GitHub Actions 远程验证
 
-已内置工作流：
+工作流：`.github/workflows/chromium-patch-verify.yml`
 
-- `.github/workflows/chromium-patch-verify.yml`
+1. PR 默认 `apply-only`（快速验证 patch 可应用）
+2. 手动触发可选 `minimal` 或 `full`
 
-行为：
-
-- `pull_request`：默认跑 `apply-only`（只验证 patch 能否应用到指定 Chromium 基线）
-- `workflow_dispatch`：可手动选
-  - `apply-only`
-  - `minimal`（推荐，编译最小目标 `chrome/common:common`）
-  - `full`（全量 `chrome`，耗时和磁盘都很高）
-
-手动触发建议：
+推荐参数：
 
 1. `build_mode=minimal`
-2. `chromium_ref=origin/main`（或你锁定的 commit）
+2. `chromium_ref=origin/main`（或锁定 SHA）
 3. `verify_target=chrome/common:common`
-4. `ninja_jobs=4~8`（降低 OOM 风险）
+4. `ninja_jobs=4~8`
 
-工作流会先自动清理 runner 磁盘，再拉 Chromium、应用 `patches/*.patch`，最后按模式执行验证。
+补丁应用策略：
 
-对应脚本：
+1. 默认 `PATCH_APPLY_STRATEGY=resilient`（`--check` 失败时自动回退 `--3way`）
+2. 如需严格模式可设 `PATCH_APPLY_STRATEGY=strict`
 
-- `scripts/ci_verify_chromium.sh`
+## 开发调试 CLI（可选）
 
-## 说明
+`launcher/antidetect.py` 仍可用于本地开发期调试：
 
-- 当前仓库不包含 Chromium C++ 具体 hook 实现；这是下一阶段在 `patches/` 里逐步沉淀的内容。
-- 启动器已经预留 `--antidetect-config` 参数传递链路，便于你在 Chromium 侧解析并应用指纹参数。
+```bash
+make validate
+make dry-run-dev
+make launch-dev
+```

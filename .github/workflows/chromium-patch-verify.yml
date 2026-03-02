@@ -37,6 +37,7 @@ jobs:
     env:
       CHROMIUM_REF: origin/main
       BUILD_MODE: apply-only
+      PATCH_APPLY_STRATEGY: resilient
       VERIFY_TARGET: chrome/common:common
       NINJA_JOBS: "6"
       INSTALL_LINUX_DEPS: "1"

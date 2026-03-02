@@ -8,6 +8,7 @@ SRC_DIR="$WORK_DIR/src"
 PATCH_DIR="$ROOT_DIR/patches"
 CHROMIUM_REF="${CHROMIUM_REF:-origin/main}"
 BUILD_MODE="${BUILD_MODE:-apply-only}" # apply-only|minimal|full
+PATCH_APPLY_STRATEGY="${PATCH_APPLY_STRATEGY:-resilient}" # resilient|strict
 VERIFY_TARGET="${VERIFY_TARGET:-chrome/common:common}"
 GN_OUT_DIR="${CHROMIUM_OUT_DIR:-out/Verify}"
 NINJA_JOBS="${NINJA_JOBS:-6}"
@@ -89,10 +90,29 @@ apply_patches() {
   fi
 
   for patch in "${PATCHES[@]}"; do
-    log "Checking patch: $patch"
-    git apply --check "$patch"
-    log "Applying patch: $patch"
-    git apply --3way "$patch"
+    if [[ "$PATCH_APPLY_STRATEGY" == "strict" ]]; then
+      log "Checking patch (strict): $patch"
+      git apply --check "$patch"
+      log "Applying patch: $patch"
+      git apply --3way "$patch"
+      continue
+    fi
+
+    # Resilient mode: drift on origin/main may break --check while --3way still succeeds.
+    if git apply --check "$patch"; then
+      log "Applying patch: $patch"
+      git apply --3way "$patch"
+      continue
+    fi
+
+    log "Patch check failed, retry with 3way merge: $patch"
+    if git apply --3way "$patch"; then
+      log "3way merge succeeded: $patch"
+      continue
+    fi
+
+    log "Failed to apply patch even with 3way: $patch"
+    exit 5
   done
   popd >/dev/null
 }
@@ -150,4 +170,3 @@ main() {
 }
 
 main "$@"
-
